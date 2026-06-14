@@ -303,7 +303,7 @@ pub fn get_license_state(store: &SettingsStore) -> Result<LicenseState, String> 
     };
 
     Ok(LicenseState {
-        license_gate_active: license_active || trial_active || developer_license_bypass_active(),
+        true,
         trial_active,
         trial_started_at: trial_started_at.to_rfc3339(),
         trial_ends_at: trial_ends_at.to_rfc3339(),
