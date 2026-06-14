@@ -12,7 +12,7 @@ jobs:
     permissions:
       contents: write
 
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
 
     outputs:
       release-id: ${{ steps.create-release.outputs.result }}
@@ -87,27 +87,17 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: blacksmith-6vcpu-macos-15
-            os: macos
-            rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
-            tauri-args: --target universal-apple-darwin
-            cargo-cache-dir: src-tauri/target
-          - platform: blacksmith-4vcpu-windows-2025
-            os: windows
-            rust-targets: x86_64-pc-windows-msvc
-            tauri-args: ""
-            cargo-cache-dir: C:\t
+              - platform: windows-2022
+                os: windows
+                rust-targets: x86_64-pc-windows-msvc
+                tauri-args: ""
+                cargo-cache-dir: C:\t
 
     runs-on: ${{ matrix.platform }}
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: verify Xcode
-        if: matrix.os == 'macos'
-        env:
-          DEVELOPER_DIR: /Applications/Xcode_16.3.app/Contents/Developer
-        run: xcodebuild -version
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -166,69 +156,9 @@ jobs:
       - name: install frontend dependencies
         run: bun ci
 
-      - name: import Apple Developer Certificate
-        if: matrix.os == 'macos'
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-        run: |
-          echo $APPLE_CERTIFICATE | base64 --decode > certificate.p12
-          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
-          security default-keychain -s build.keychain
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
-          security set-keychain-settings -t 3600 -u build.keychain
-          security import certificate.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
-          security find-identity -v -p codesigning build.keychain
 
-      - name: verify certificate
-        if: matrix.os == 'macos'
-        run: |
-          CERT_INFO=$(security find-identity -v -p codesigning build.keychain | grep "Developer ID Application")
-          CERT_ID=$(echo "$CERT_INFO" | awk -F'"' '{print $2}')
-          echo "CERT_ID=$CERT_ID" >> $GITHUB_ENV
-          echo "Certificate imported."
 
-      - name: build and publish macOS
-        if: matrix.os == 'macos'
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ env.CERT_ID }}
-          MACOSX_DEPLOYMENT_TARGET: "14.0"
-          CMAKE_OSX_DEPLOYMENT_TARGET: "14.0"
-          DEVELOPER_DIR: /Applications/Xcode_16.3.app/Contents/Developer
-          # Apple Clang still defines __ARM_FEATURE_MATMUL_INT8 for ggml's +noi8mm build,
-          # which makes whisper-rs-sys compile the wrong ARM path on GitHub's arm64 runner.
-          CFLAGS_aarch64_apple_darwin: "-U__ARM_FEATURE_MATMUL_INT8"
-          CXXFLAGS_aarch64_apple_darwin: "-U__ARM_FEATURE_MATMUL_INT8"
-          POSTHOG_API_KEY: ${{ secrets.POSTHOG_API_KEY }}
-          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
-          VITE_GLIMPSE_PERSONAL_CHECKOUT_URL: ${{ secrets.VITE_GLIMPSE_PERSONAL_CHECKOUT_URL }}
-          VITE_GLIMPSE_COMMERCIAL_CHECKOUT_URL: ${{ secrets.VITE_GLIMPSE_COMMERCIAL_CHECKOUT_URL }}
-          VITE_GLIMPSE_FOUNDER_CHECKOUT_URL: ${{ secrets.VITE_GLIMPSE_FOUNDER_CHECKOUT_URL }}
-          VITE_GLIMPSE_CUSTOMER_PORTAL: ${{ secrets.VITE_GLIMPSE_CUSTOMER_PORTAL }}
-          GLIMPSE_POLAR_BENEFIT_PERSONAL: ${{ secrets.GLIMPSE_POLAR_BENEFIT_PERSONAL }}
-          GLIMPSE_POLAR_BENEFIT_COMMERCIAL: ${{ secrets.GLIMPSE_POLAR_BENEFIT_COMMERCIAL }}
-          GLIMPSE_POLAR_BENEFIT_FOUNDER: ${{ secrets.GLIMPSE_POLAR_BENEFIT_FOUNDER }}
-          GLIMPSE_POLAR_BENEFIT_CONTRIBUTOR: ${{ secrets.GLIMPSE_POLAR_BENEFIT_CONTRIBUTOR }}
-        with:
-          releaseId: ${{ needs.create-release.outputs.release-id }}
-          tagName: v__VERSION__
-          releaseName: "Glimpse v__VERSION__"
-          releaseBody: "See the assets to download this version and install."
-          releaseDraft: true
-          prerelease: ${{ needs.create-release.outputs.prerelease == 'true' }}
-          includeUpdaterJson: false
-          args: ${{ matrix.tauri-args }}
+      # macOS build removed — this workflow now only builds Windows (matrix includes windows-2022 only)
 
       - name: build and publish Windows
         if: matrix.os == 'windows'
@@ -264,7 +194,7 @@ jobs:
       - create-release
       - publish-tauri
 
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
 
     steps:
       - name: publish combined updater JSON
