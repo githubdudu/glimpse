@@ -165,8 +165,9 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # Disable signing for CI Windows builds — use unsigned artifacts.
+          TAURI_SIGNING_PRIVATE_KEY: ""
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
           POSTHOG_API_KEY: ${{ secrets.POSTHOG_API_KEY }}
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
           VITE_GLIMPSE_PERSONAL_CHECKOUT_URL: ${{ secrets.VITE_GLIMPSE_PERSONAL_CHECKOUT_URL }}
@@ -187,71 +188,4 @@ jobs:
           includeUpdaterJson: false
           args: ${{ matrix.tauri-args }}
 
-  publish-updater-json:
-    permissions:
-      contents: write
-    needs:
-      - create-release
-      - publish-tauri
-
-    runs-on: ubuntu-24.04
-
-    steps:
-      - name: publish combined updater JSON
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}
-          TAG_NAME: v${{ needs.create-release.outputs.version }}
-          VERSION: ${{ needs.create-release.outputs.version }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          assets_json=$(gh release view "$TAG_NAME" --json assets)
-
-          mac_asset=$(jq -r '.assets[].name | select(endswith(".app.tar.gz"))' <<< "$assets_json" | head -n 1)
-          mac_sig="${mac_asset}.sig"
-          windows_asset=$(jq -r '.assets[].name | select(endswith(".exe"))' <<< "$assets_json" | head -n 1)
-          if [[ -z "$windows_asset" ]]; then
-            windows_asset=$(jq -r '.assets[].name | select(endswith(".msi"))' <<< "$assets_json" | head -n 1)
-          fi
-          windows_sig="${windows_asset}.sig"
-
-          for asset in "$mac_asset" "$mac_sig" "$windows_asset" "$windows_sig"; do
-            if [[ -z "$asset" || "$asset" == "null" ]]; then
-              echo "Missing updater asset: $asset" >&2
-              jq -r '.assets[].name' <<< "$assets_json" >&2
-              exit 1
-            fi
-          done
-
-          workdir=$(mktemp -d)
-          gh release download "$TAG_NAME" --pattern "$mac_sig" --pattern "$windows_sig" --dir "$workdir"
-
-          mac_signature=$(<"$workdir/$mac_sig")
-          windows_signature=$(<"$workdir/$windows_sig")
-          mac_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG_NAME}/${mac_asset}"
-          windows_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG_NAME}/${windows_asset}"
-
-          jq -n \
-            --arg version "$VERSION" \
-            --arg notes "See the assets to download this version and install." \
-            --arg pub_date "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
-            --arg mac_signature "$mac_signature" \
-            --arg mac_url "$mac_url" \
-            --arg windows_signature "$windows_signature" \
-            --arg windows_url "$windows_url" \
-            '{
-              version: $version,
-              notes: $notes,
-              pub_date: $pub_date,
-              platforms: {
-                "darwin-aarch64": { signature: $mac_signature, url: $mac_url },
-                "darwin-x86_64": { signature: $mac_signature, url: $mac_url },
-                "darwin-aarch64-app": { signature: $mac_signature, url: $mac_url },
-                "darwin-x86_64-app": { signature: $mac_signature, url: $mac_url },
-                "windows-x86_64": { signature: $windows_signature, url: $windows_url }
-              }
-            }' > latest.json
-
-          gh release upload "$TAG_NAME" latest.json --clobber
+  # publish-updater-json job removed — updater metadata upload disabled
